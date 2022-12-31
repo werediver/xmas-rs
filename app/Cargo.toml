@@ -1,0 +1,18 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+embedded-hal = "0.2.7"
+cortex-m = "0.7.6"
+cortex-m-rt = "0.7.1"
+rp-pico = "0.6.0"
+alloc-cortex-m = "0.4.3"
+rtt-target = { version = "0.3.1", features = ["cortex-m"] }
+# libm = "0.2.5"
+fugit = "0.3.6"
+
+app-core = { path = "../lib/app-core" }
