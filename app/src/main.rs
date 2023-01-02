@@ -7,25 +7,23 @@ mod uptime_delay;
 
 extern crate alloc;
 
-use alloc::{alloc::Layout, fmt::Debug};
+use alloc::alloc::Layout;
 use core::panic::PanicInfo;
-use embedded_hal::PwmPin;
+use libm::{logf, powf};
 
-use cortex_m::prelude::_embedded_hal_blocking_delay_DelayMs;
-use rp_pico as bsp;
-
+use alloc_cortex_m::CortexMHeap;
 use bsp::{
     entry, hal,
     hal::{
         clocks::ClocksManager,
         pll::{common_configs::PLL_USB_48MHZ, setup_pll_blocking, PLLConfig},
         xosc::setup_xosc_blocking,
-        Clock, Sio, Watchdog, I2C,
+        Clock, Sio, Watchdog,
     },
     pac,
 };
-
-use alloc_cortex_m::CortexMHeap;
+use embedded_hal::{digital::v2::ToggleableOutputPin, PwmPin};
+use rp_pico as bsp;
 
 use fugit::{HertzU32, RateExtU32};
 use rtt_target::{rprintln, rtt_init_print};
@@ -43,7 +41,7 @@ fn main() -> ! {
     let core = pac::CorePeripherals::take().unwrap();
     let _uptime = Uptime::new(core.SYST);
 
-    let pins = bsp::Pins::new(
+    let mut pins = bsp::Pins::new(
         pac.IO_BANK0,
         pac.PADS_BANK0,
         sio.gpio_bank0,
@@ -64,6 +62,7 @@ fn main() -> ! {
     let mut clocks = ClocksManager::new(pac.CLOCKS);
 
     // Some SYS_PLL configurations and resulting clock frequencies:
+    // 66   MHz      400, 2, 1, 3
     // 11   MHz      400, 1, 6, 6
     //  8.3 MHz      600, 2, 6, 6
     //  7 083 333 Hz 510, 2, 6, 6
@@ -72,10 +71,10 @@ fn main() -> ! {
         pac.PLL_SYS,
         xosc.operating_frequency(),
         PLLConfig {
-            vco_freq: HertzU32::MHz(510),
+            vco_freq: HertzU32::MHz(400),
             refdiv: 2,
-            post_div1: 6,
-            post_div2: 6,
+            post_div1: 1,
+            post_div2: 3,
         },
         &mut clocks,
         &mut pac.RESETS,
@@ -96,7 +95,7 @@ fn main() -> ! {
     clocks.init_default(&xosc, &pll_sys, &pll_usb).unwrap();
     rprintln!("System clock freq: {}", clocks.system_clock.freq());
 
-    const PWM_TOP: u16 = 0x07ff;
+    const PWM_TOP: u16 = 0x0fff;
     let mut pwm_slices = hal::pwm::Slices::new(pac.PWM, &mut pac.RESETS);
     let pwm = &mut pwm_slices.pwm1;
     pwm.set_top(PWM_TOP);
@@ -105,13 +104,20 @@ fn main() -> ! {
     let channel = &mut pwm.channel_a;
     channel.output_to(pins.gpio2);
 
-    // const FADE_TOP: u16 = (PWM_TOP as f32 * 0.95) as u16;
     const FADE_TOP: u16 = PWM_TOP;
-    const FADE_STEP_DELAY_US: u64 = (30e6 / FADE_TOP as f32 / 2.0) as u64;
+    const FADE_STEP_DELAY_US: u64 = (20e6 / FADE_TOP as f32 / 2.0) as u64;
     loop {
-        for i in 0..=FADE_TOP {
-            Uptime::delay_us(FADE_STEP_DELAY_US);
-            let duty = (smoothstep(0.0, FADE_TOP as f32, i as f32) * FADE_TOP as f32) as u16;
+        for i in (0..=FADE_TOP).chain((1..FADE_TOP).rev()) {
+            let s = smoothstep(0.0, FADE_TOP as f32, i as f32);
+            let k = duty_cycle(
+                lerp(
+                    0.1,       // Don't turn the lights off completely
+                    0.5,       // Lower the maximum brightness
+                    s * s * s, // Compress (shorten) the bright phase
+                ),
+                ActiveLevel::Low,
+            );
+            let duty = (k * FADE_TOP as f32) as u16;
             channel.set_duty(duty);
         }
 
@@ -120,6 +126,20 @@ fn main() -> ! {
             let duty = (smoothstep(0.0, FADE_TOP as f32, i as f32) * FADE_TOP as f32) as u16;
             channel.set_duty(duty);
         }
+    }
+}
+
+enum ActiveLevel {
+    Low,
+    High,
+}
+
+fn duty_cycle(perceived_brightness: f32, active_level: ActiveLevel) -> f32 {
+    let active_high_duty_cycle = (powf(10.0, perceived_brightness) - 1.0) / 9.0;
+
+    match active_level {
+        ActiveLevel::High => active_high_duty_cycle,
+        ActiveLevel::Low => 1.0 - active_high_duty_cycle,
     }
 }
 
@@ -132,6 +152,10 @@ fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
         let k = (x - a) / (b - a);
         k * k * (3.0 - 2.0 * k)
     }
+}
+
+fn lerp(a: f32, b: f32, x: f32) -> f32 {
+    a + (b - a) * x
 }
 
 #[alloc_error_handler]

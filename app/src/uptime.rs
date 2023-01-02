@@ -43,15 +43,15 @@ impl Uptime {
             .expect("uptime must not overflow during the delay");
         loop {
             let now = Self::get_instant();
-            if let Some(left) = end.checked_duration_since(now) {
-                if left.to_millis() > SYST_RELOAD_PERIOD_MS as u64 {
-                    cortex_m::asm::wfi();
-                } else {
-                    break;
-                }
+            if let Some(_left) = end.checked_duration_since(now) {
+                // if left.to_millis() > SYST_RELOAD_PERIOD_MS as u64 {
+                //     cortex_m::asm::wfi();
+                // } else {
+                //     break;
+                // }
             } else {
-                let overshot = now - end;
-                rprintln!("Delay overshot by {}", overshot);
+                // let overshot = now - end;
+                // rprintln!("Delay overshot by {}", overshot);
                 break;
             }
         }

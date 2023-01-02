@@ -12,7 +12,7 @@ cortex-m-rt = "0.7.1"
 rp-pico = "0.6.0"
 alloc-cortex-m = "0.4.3"
 rtt-target = { version = "0.3.1", features = ["cortex-m"] }
-# libm = "0.2.5"
+libm = "0.2.5"
 fugit = "0.3.6"
 
 app-core = { path = "../lib/app-core" }
